@@ -1,0 +1,134 @@
+---
+title: "postgreSQL"
+author: "hskim(dsrla)"
+date: '2019 12 12 '
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+# 시작 전 단계
+postgreSQL 설치 및 dvd rental 데이터 읽기는 생략한다.
+
+# 시작
+dbconnect 후 예시로 actor 테이블 전부 불러온다
+```{r dbconnect}
+
+library(RPostgreSQL)
+library(DBI)
+
+library(RPostgreSQL)
+library(DBI)
+
+pgdrv <- dbDriver("PostgreSQL")
+
+con <- dbConnect(pgdrv, dbname="dvd", 
+                 port="5432", 
+                 user="postgres", 
+                 password='0000', 
+                 host="localhost")
+
+
+
+```
+
+# 테이블 및 칼럼 찾기
+```{r table and column}
+#테이블 (public 속에서) 찾기
+qry <- "SELECT *
+        FROM pg_catalog.pg_tables"
+
+dbGetQuery(con, qry) %>% 
+  filter(schemaname == 'public') 
+
+# 칼럼찾기
+col_qry <- "SELECT table_name,
+                   STRING_AGG(column_name, ', ') AS columns
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+            GROUP BY table_name;"
+
+dbGetQuery(con, col_qry) %>% 
+  DT::datatable()
+
+```
+
+# 예제 1번
+- What are the top and least rented (in-demand) genres and what are their total sales?
+ 장르별 매출총액을 알고 싶은 듯 하다. sales_by_film_category 테이블의 칼럼을 보니 category(장르로 추정), total_sales(칼럼명 그대로)가 있다. 이 테이블을 로드해보자 
+
+```{r qry1}
+
+qry1 <- 'SELECT * FROM sales_by_film_category'
+dbGetQuery(con,qry1)%>%
+  DT::datatable()
+```
+sports 가 4829... 로 매출이 제일 높고 music 이 3071...로 매출이 가장 낮음을 알 수 있다. 
+
+# 강의 자료 예제 3번 
+
+- Top 10 DVD 영화
+ 위의 freecode camp 자료 말고 강의 시간의 예제 3번이다. Top 10 dvd가 무엇인지 알기 위해.film,  inventory,  rental 테이블을 확인, 연계하는 과정이다.
+```{r qry2}
+qry2 <- 
+"SELECT f.title AS movie_title, 
+        COUNT(f.title) AS num_rentals
+FROM film AS f
+INNER JOIN inventory AS i
+  ON f.film_id = i.film_id
+INNER JOIN rental AS r
+  ON i.inventory_id = r.inventory_id
+GROUP BY f.title
+ORDER BY num_rentals DESC
+;"
+dbGetQuery(con,qry2)%>%
+  DT::datatable()
+```
+
+# 자유 탐구 주게
+- rental 수 탑10 말고 매출 top 10을 보고싶다.
+위의 문제에서 film_list 테이블을 조인해서 price를 곱하면 각 영화의 rental 수익을 알 수 있을 것이다.
+```{r qry3}
+qry3 <- 
+'SELECT f.title AS movie_title, 
+        COUNT(f.title) AS num_rentals, fl.price, COUNT(f.title)*fl.price AS num_amount
+		
+FROM film AS f
+INNER JOIN inventory AS i
+  ON f.film_id = i.film_id
+INNER JOIN rental AS r
+  ON i.inventory_id = r.inventory_id
+INNER JOIN film_list AS fl
+  ON f.title = fl. title
+GROUP BY f.title, fl.price
+
+ORDER BY num_amount  DESC;'
+dbGetQuery(con,qry3)%>%
+  DT::datatable()
+# 추가적으로 장르 정보도 보고 싶다면?
+qry4 <- 'SELECT f.title AS movie_title, 
+       name, COUNT(f.title) AS num_rentals, fl.price, count(f.title)*fl.price AS num_amount
+		
+FROM film AS f
+INNER JOIN inventory AS i
+  ON f.film_id = i.film_id
+INNER JOIN rental AS r
+  ON i.inventory_id = r.inventory_id
+INNER JOIN film_list AS fl
+  ON f.title = fl. title
+JOIN film_category as fc
+ON f.film_id =fc.film_id
+INNER JOIN category as c
+USING (category_id)
+GROUP BY f.title, fl.price,name
+
+ORDER BY num_amount  DESC;'
+dbGetQuery(con,qry4)%>%
+  DT::datatable()
+
+
+DBI::dbDisconnect(con)
+```
+
